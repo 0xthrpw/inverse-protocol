@@ -12,4 +12,5 @@ interface IFToken {
     function totalSupply() external view returns (uint);
     function availableToInvestOut() external view returns (uint);
     function decimals() external view returns (uint8);
+    function depositArbCheck() external view returns (bool);
 }

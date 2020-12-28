@@ -16,6 +16,7 @@ import "./Timelock.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/math/Math.sol";
+import "hardhat/console.sol";
 
 contract FTokenStrat is IStrat {
 
@@ -64,6 +65,8 @@ contract FTokenStrat is IStrat {
 
     function invest() external override onlyVault {
         uint balance = underlying.balanceOf(address(this));
+	console.log('bal', balance);
+	console.log('buf', buffer);
         if(balance > buffer) {
             fToken.deposit(balance - buffer); // can't underflow because of above if statement
         }
@@ -157,6 +160,11 @@ contract FTokenStrat is IStrat {
 
     function changeTimelock(Timelock _newTimelock) public onlyTimelock {
         timelock = Timelock(_newTimelock);
+    }
+
+    function depositArbCheck() external view returns (bool) {
+	console.log('asdfasdfasdfasfasdfasdfasdfsfdfadepositArbCheck');
+        return false;
     }
 
 }
