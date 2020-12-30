@@ -4,7 +4,7 @@ const { ethers } = require('hardhat')
 const { expect } = require('chai')
 
 const INVERSE_DEPLOYER = '0x3FcB35a1CbFB6007f9BC638D388958Bc4550cB28'
-const FDAI = '0xe85c8581e60d7cd32bbfd86303d2a4fa6a951dac'
+const FTOKEN = '0xab7fa2b2985bccfc13c6d86b1d5a17486ab1e04c'
 const DAI = '0x6b175474e89094c44da98b954eedeac495271d0f'
 
 const HARVESTER = '0x7F058B17648a257ADD341aB76FeBC21794c6e118'
@@ -12,6 +12,7 @@ const YFI_ADDRESS = '0x0bc529c00C6401aEF6D220BE8C6Ea1667F6Ad93e'
 const DAI_BAGS = '0x079667f4f7a0B440Ad35ebd780eFd216751f0758'
 
 const INVDAO_TIMELOCK = '0xD93AC1B3D1a465e1D5ef841c141C8090f2716A16'
+const FARMPOOL = '0x15d3A64B2d5ab9E152F16593Cdebc4bB165B5B4A'
 
 const overrides = { gasPrice: ethers.utils.parseUnits('0', 'gwei') }
 
@@ -32,7 +33,8 @@ describe('harvest finance setup', () => {
   it('Should deploy fToken strat and connect to Vault', async () => {
     const signer = await ethers.provider.getSigner(INVERSE_DEPLOYER)
     const Strat = (await ethers.getContractFactory('FTokenStrat')).connect(signer)
-    strat = await Strat.deploy(vault.address, FDAI, overrides)
+    strat = await Strat.deploy(vault.address, FTOKEN, FARMPOOL, overrides)
+
     await strat.deployed()
     await vault.setStrat(strat.address, false)
     expect(await vault.strat()).to.equal(strat.address)
@@ -51,9 +53,17 @@ describe('harvest finance strategy experiments', () => {
     await vault.deployed()
 
     const Strat = (await ethers.getContractFactory('FTokenStrat')).connect(signer)
-    strat = await Strat.deploy(vault.address, FDAI, overrides)
+    strat = await Strat.deploy(vault.address, FTOKEN, FARMPOOL, overrides)
     await strat.deployed()
     await vault.setStrat(strat.address, false)
+  })
+
+  it('Should should set strategist and set buffer', async function () {
+    await strat.setStrategist(INVERSE_DEPLOYER)
+    await strat.setBuffer(ethers.utils.parseEther('5000'))
+
+    expect(await strat.buffer()).to.equal(ethers.utils.parseEther('5000'))
+    expect(await strat.strategist()).to.equal(INVERSE_DEPLOYER)
   })
 
   it('Should deposit (DAI)', async () => {
@@ -76,20 +86,20 @@ describe('harvest finance strategy experiments', () => {
       method: 'hardhat_impersonateAccount',
       params: [DAI_BAGS]
     })
-    const amount = ethers.utils.parseEther('1000')
+    await strat.setStrategist(INVERSE_DEPLOYER)
+    await strat.setBuffer(ethers.utils.parseEther('5000'))
+
     const signer = await ethers.provider.getSigner(DAI_BAGS)
     const dai = (await ethers.getContractAt('IERC20', DAI)).connect(signer)
     const signedVault = vault.connect(signer)
 
-    await dai.approve(signedVault.address, amount)
-    await signedVault.deposit(amount)
-    expect(await signedVault.balanceOf(await signer.getAddress())).to.equal(amount)
+    await dai.approve(signedVault.address, ethers.utils.parseEther('11000000'))
+    await signedVault.deposit(ethers.utils.parseEther('20000'))
 
-    const balance = await signedVault.balanceOf(await signer.getAddress())
     const oldBalance = await dai.balanceOf(DAI_BAGS)
-    await signedVault.withdraw(amount)
+    await signedVault.withdraw(ethers.utils.parseEther('1000'))
     const newBalance = await dai.balanceOf(DAI_BAGS)
-    expect(newBalance.sub(oldBalance)).to.equal(balance)
+    expect(newBalance.sub(oldBalance)).to.equal(ethers.utils.parseEther('1000'))
   })
 
   it('Should only update timelock from timelock', async () => {
@@ -147,7 +157,6 @@ describe('harvest finance strategy experiments', () => {
       method: 'hardhat_impersonateAccount',
       params: [DAI_BAGS]
     })
-
     const signer = await ethers.provider.getSigner(DAI_BAGS)
     const attempt = strat.connect(signer)
 
@@ -185,10 +194,6 @@ describe('harvest finance strategy experiments', () => {
       method: 'hardhat_impersonateAccount',
       params: [INVERSE_DEPLOYER]
     })
-    await hre.network.provider.request({
-      method: 'hardhat_impersonateAccount',
-      params: [DAI_BAGS]
-    })
 
     const amount = ethers.utils.parseEther('1')
     const signer = await ethers.provider.getSigner(DAI_BAGS)
@@ -204,15 +209,19 @@ describe('harvest finance strategy experiments', () => {
     const stratSigner = await ethers.provider.getSigner(INVERSE_DEPLOYER)
     const stratAccess = strat.connect(stratSigner)
 
-    const fToken = (await ethers.getContractAt('IFToken', strat.fToken()))
-    console.log('1', (await fToken.totalSupply()).toString())
     // Note: Only initially, the buffer will keep incoming deposits in the strategy
     // instead of directly depositing them into Harvest. This way we can do it manually and
     // gradually to avoid a total collapse in the case of a bug during migration.
     // Thus at the moment, we remove the buffer by setting to 0
     await stratAccess.setBuffer(0, overrides)
     await vaultAccess.invest(overrides)
+  })
 
-    // console.log('2', (await fToken.totalSupply()).toString())
+  it('Should should yield FARM tokens', async () => {
+    const rewardTokenAddress = await strat.rewardtoken()
+    const signer = await ethers.provider.getSigner(DAI_BAGS)
+    const farm = (await ethers.getContractAt('IERC20', rewardTokenAddress)).connect(signer)
+    const farmBalance = await farm.balanceOf(strat.address)
+    expect(farmBalance).to.gt(0)
   })
 })
